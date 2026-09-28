@@ -203,6 +203,39 @@ export function registerExpenseTools(
     });
   });
 
+  if (allowWrites) server.registerTool('ofw_update_expense', {
+    description: 'Update an existing OurFamilyWizard expense using the current web-app full-resource update contract. Supply the complete current expense fields plus expenseId. Set privateExpense=false to publish a previously private/staged expense to the co-parent. This is a full update, not a partial patch.',
+    annotations: { readOnlyHint: false, destructiveHint: true },
+    inputSchema: z.object({
+      expenseId: z.number().int().positive().describe('Existing OFW expense entity id'),
+      title: z.string().trim().min(1).describe('Current expense title/name shown in OFW'),
+      amount: z.number().positive().describe('Current full expense amount'),
+      purchaseDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Current expense date, YYYY-MM-DD'),
+      categoryId: z.number().int().positive().describe('Current OFW expense category id'),
+      payerId: z.number().int().positive().describe('Current OFW payer/reimbursing parent userId'),
+      children: z.array(z.number().int().positive()).min(1).describe('Current OFW child userIds associated with the expense'),
+      description: z.string().trim().min(1).describe('Current supporting description/details, when present').optional(),
+      privateExpense: z.boolean().describe('true = visible only to you; false = shared with co-parent'),
+      receiptFileId: z.number().int().positive().describe('Current single OFW receipt fileId, when present').optional(),
+    }),
+  }, async (args) => {
+    const payload: Record<string, unknown> = {
+      title: args.title,
+      amount: args.amount,
+      purchaseDate: args.purchaseDate,
+      categoryId: args.categoryId,
+      payerId: args.payerId,
+      children: args.children,
+      isPrivate: args.privateExpense,
+    };
+
+    if (args.description !== undefined) payload.description = args.description;
+    if (args.receiptFileId !== undefined) payload.fileIds = [args.receiptFileId];
+
+    const data = await client.request('PUT', `/pub/v2/expense/expenses/${args.expenseId}`, payload);
+    return jsonResponse(data);
+  });
+
   if (allowWrites) server.registerTool('ofw_create_expense', {
     description: 'Log a new expense in OurFamilyWizard using the current web-app expense contract. Required fields are title, amount, purchaseDate, categoryId, payerId (the parent who owes), and at least one child user id. Supports one previously-uploaded receipt PDF and private entries. privateExpense=true creates an expense visible only to you; false/default creates the normal shared expense. receiptFileId should come from ofw_upload_expense_pdf.',
     annotations: { readOnlyHint: false, destructiveHint: true },
