@@ -203,13 +203,32 @@ curl -s 'https://ofw.ourfamilywizard.com/pub/v2/expense/expenses/totals' "${AUTH
 curl -s 'https://ofw.ourfamilywizard.com/pub/v2/expense/expenses?start=0&max=20' "${AUTH_HEADERS[@]}" | jq .
 ```
 
+**Upload a receipt PDF privately** (write to My Files; not independently shared):
+
+```sh
+curl -s -X POST 'https://ofw.ourfamilywizard.com/pub/v3/myfiles/multipart' \
+  "${AUTH_HEADERS[@]}" \
+  -F "file=@/path/to/receipt.pdf;type=application/pdf" \
+  -F 'source=expense' \
+  -F 'description=receipt.pdf' \
+  -F 'label=receipt.pdf' \
+  -F 'fileName=receipt.pdf' \
+  -F 'shareClass=PRIVATE' | jq .
+```
+
+Use the returned `fileId` as `receiptFileId` when creating the expense.
+
 **Create an expense** (write):
 
 ```sh
 curl -s -X POST 'https://ofw.ourfamilywizard.com/pub/v2/expense/expenses' \
   "${AUTH_HEADERS[@]}" -H 'Content-Type: application/json' \
-  --data '{"amount": 45.00, "description": "Cleats for soccer"}' | jq .
+  --data '{"amount":45.00,"description":"Cleats for soccer","publicFlag":true,"receiptFileId":12345}' | jq .
 ```
+
+For a private expense, send `publicFlag:false`. The MCP-facing `privateExpense`
+argument is inverted into this wire field so callers do not have to reason in
+double negatives. Expense creation supports a single receipt file.
 
 ## 8. Journal
 
