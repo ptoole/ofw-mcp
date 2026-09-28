@@ -160,13 +160,13 @@ describe('ofw_upload_expense_pdf', () => {
     else process.env.OFW_WRITE_MODE = original;
   });
 
-  it('uploads a PDF as a PRIVATE expense-source My Files object', async () => {
+  it('uploads a PDF as a SHARED expense-source My Files object', async () => {
     const client = makeClient({
       fileId: 123,
       fileName: 'receipt.pdf',
       fileType: 'application/pdf',
       sizeInBytes: 9,
-      shareClass: 'PRIVATE',
+      shareClass: 'SHARED',
     });
     const io = makeAttachmentIO();
     setup(client, io);
@@ -179,12 +179,13 @@ describe('ofw_upload_expense_pdf', () => {
     expect(call[1]).toBe('/pub/v3/myfiles/multipart');
     const form = call[2] as FormData;
     expect(form.get('source')).toBe('expense');
-    expect(form.get('shareClass')).toBe('PRIVATE');
+    expect(form.get('shareClass')).toBe('SHARED');
+    expect(form.get('shared')).toBe('true');
     expect(form.get('fileName')).toBe('receipt.pdf');
 
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.fileId).toBe(123);
-    expect(parsed.shareClass).toBe('PRIVATE');
+    expect(parsed.shareClass).toBe('SHARED');
   });
 
   it('uploads a signed hosted PDF URL without using local AttachmentIO', async () => {
@@ -193,7 +194,7 @@ describe('ofw_upload_expense_pdf', () => {
       fileName: 'receipt.pdf',
       fileType: 'application/pdf',
       sizeInBytes: 9,
-      shareClass: 'PRIVATE',
+      shareClass: 'SHARED',
     });
     const io = makeAttachmentIO();
 
@@ -221,12 +222,13 @@ describe('ofw_upload_expense_pdf', () => {
     expect(call[1]).toBe('/pub/v3/myfiles/multipart');
     const form = call[2] as FormData;
     expect(form.get('source')).toBe('expense');
-    expect(form.get('shareClass')).toBe('PRIVATE');
+    expect(form.get('shareClass')).toBe('SHARED');
+    expect(form.get('shared')).toBe('true');
     expect(form.get('fileName')).toBe('receipt.pdf');
 
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.fileId).toBe(456);
-    expect(parsed.shareClass).toBe('PRIVATE');
+    expect(parsed.shareClass).toBe('SHARED');
   });
 
   it('rejects untrusted remote PDF hosts before calling OFW', async () => {
@@ -296,7 +298,7 @@ describe('ofw_create_expense', () => {
     });
     expect(client.request).toHaveBeenCalledWith(
       'POST',
-      '/pub/v2/expense/expenses',
+      '/pub/v2/expense',
       {
         title: 'School supplies',
         amount: 50,
@@ -310,7 +312,7 @@ describe('ofw_create_expense', () => {
     expect(result.content).toHaveLength(1);
   });
 
-  it('maps privateExpense to publicFlag=false and attaches one receipt file', async () => {
+  it('maps privateExpense to isPrivate=true and attaches one receipt file', async () => {
     const client = makeClient({ id: 100 });
     setup(client, makeAttachmentIO());
     await handlers.get('ofw_create_expense')!({
@@ -326,7 +328,7 @@ describe('ofw_create_expense', () => {
     });
     expect(client.request).toHaveBeenCalledWith(
       'POST',
-      '/pub/v2/expense/expenses',
+      '/pub/v2/expense',
       {
         title: 'Medical copay',
         amount: 42.25,
@@ -335,13 +337,13 @@ describe('ofw_create_expense', () => {
         payerId: 2196509,
         children: [2196512],
         description: 'Medical copay',
-        publicFlag: false,
-        receiptFileId: 777,
+        isPrivate: true,
+        fileIds: [777],
       },
     );
   });
 
-  it('maps an explicitly shared expense to publicFlag=true', async () => {
+  it('maps an explicitly shared expense to isPrivate=false', async () => {
     const client = makeClient({ id: 101 });
     setup(client, makeAttachmentIO());
     await handlers.get('ofw_create_expense')!({
@@ -355,7 +357,7 @@ describe('ofw_create_expense', () => {
     });
     expect(client.request).toHaveBeenCalledWith(
       'POST',
-      '/pub/v2/expense/expenses',
+      '/pub/v2/expense',
       {
         title: 'Shared',
         amount: 10,
@@ -363,7 +365,7 @@ describe('ofw_create_expense', () => {
         categoryId: 1,
         payerId: 2196509,
         children: [2196510, 2196511, 2196512],
-        publicFlag: true,
+        isPrivate: false,
       },
     );
   });
@@ -406,6 +408,81 @@ describe('ofw_create_expense', () => {
   });
 });
 
+describe('ofw_update_expense', () => {
+  let original: string | undefined;
+  beforeEach(() => {
+    original = process.env.OFW_WRITE_MODE;
+    process.env.OFW_WRITE_MODE = 'all';
+  });
+  afterEach(() => {
+    if (original === undefined) delete process.env.OFW_WRITE_MODE;
+    else process.env.OFW_WRITE_MODE = original;
+  });
+
+  it('publishes a private expense with the full OFW web-app payload', async () => {
+    const client = makeClient({ id: 12322018 });
+    setup(client, makeAttachmentIO());
+    await handlers.get('ofw_update_expense')!({
+      expenseId: 12322018,
+      title: 'Verizon September - Aaron 561-566-4603',
+      categoryId: 304873,
+      amount: 35.87,
+      purchaseDate: '2026-09-09',
+      receiptFileId: 60449328,
+      privateExpense: false,
+      payerId: 2196509,
+      children: [2196512],
+    });
+
+    expect(client.request).toHaveBeenCalledWith(
+      'PUT',
+      '/pub/v2/expense/expenses/12322018',
+      {
+        title: 'Verizon September - Aaron 561-566-4603',
+        amount: 35.87,
+        purchaseDate: '2026-09-09',
+        categoryId: 304873,
+        payerId: 2196509,
+        children: [2196512],
+        isPrivate: false,
+        fileIds: [60449328],
+      },
+    );
+  });
+
+  it('requires a complete resource payload including privacy', () => {
+    const server = new McpServer({ name: 'test', version: '0.0.0' });
+    const configs = new Map<string, { inputSchema?: z.ZodObject }>();
+    vi.spyOn(server, 'registerTool').mockImplementation((name: string, config: unknown) => {
+      configs.set(name, config as { inputSchema?: z.ZodObject });
+      return undefined as never;
+    });
+    process.env.OFW_WRITE_MODE = 'all';
+    registerExpenseTools(server, new OFWClient(), makeAttachmentIO());
+
+    const schema = configs.get('ofw_update_expense')!.inputSchema!;
+    expect(schema.safeParse({
+      expenseId: 123,
+      title: 'Expense',
+      amount: 10,
+      purchaseDate: '2026-09-28',
+      categoryId: 1,
+      payerId: 2196509,
+      children: [2196512],
+      privateExpense: false,
+    }).success).toBe(true);
+    expect(schema.safeParse({
+      expenseId: 123,
+      title: 'Expense',
+      amount: 10,
+      purchaseDate: '2026-09-28',
+      categoryId: 1,
+      payerId: 2196509,
+      children: [2196512],
+    }).success).toBe(false);
+  });
+});
+
 describe('expense input schemas', () => {
   it('rejects invalid expense page and size values', () => {
     const server = new McpServer({ name: 'test', version: '0.0.0' });
@@ -440,6 +517,7 @@ describe('OFW_WRITE_MODE gating', () => {
       process.env.OFW_WRITE_MODE = mode;
       setup(makeClient({}), makeAttachmentIO());
       expect(handlers.has('ofw_create_expense')).toBe(false);
+      expect(handlers.has('ofw_update_expense')).toBe(false);
       expect(handlers.has('ofw_list_expenses')).toBe(true);
       expect(handlers.has('ofw_get_expense_totals')).toBe(true);
     }
@@ -459,6 +537,7 @@ describe('OFW_WRITE_MODE gating', () => {
     process.env.OFW_WRITE_MODE = 'all';
     setup(makeClient({}), makeAttachmentIO());
     expect(handlers.has('ofw_create_expense')).toBe(true);
+    expect(handlers.has('ofw_update_expense')).toBe(true);
     expect(handlers.has('ofw_upload_expense_pdf')).toBe(true);
   });
 });
@@ -491,6 +570,7 @@ describe('OFW_EXPENSE_UPLOAD_ONLY gating', () => {
     setup(makeClient({}), makeAttachmentIO());
     expect([...handlers.keys()].sort()).toEqual([
       'ofw_create_expense',
+      'ofw_update_expense',
       'ofw_upload_expense_pdf',
     ]);
   });
