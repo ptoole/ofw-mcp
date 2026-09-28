@@ -117,7 +117,7 @@ Always pass `--config ~/.mcporter/mcporter.json` unless a local `config/mcporter
 |------|-------|
 | `ofw_get_expense_totals` | Summary of owed/paid totals |
 | `ofw_list_expenses(start?, max?)` | Paginated; default max 20 |
-| `ofw_create_expense(amount, description)` | Log a new expense |
+| `ofw_upload_expense_pdf(path, label?, description?)` | Upload one PDF to My Files as PRIVATE for later attachment to an expense |\n| `ofw_create_expense(amount, description, privateExpense?, receiptFileId?)` | Log a new expense; optionally private and with one uploaded receipt PDF |
 
 ### Journal
 | Tool | Notes |
