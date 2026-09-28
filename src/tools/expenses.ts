@@ -4,7 +4,7 @@ import type { OFWClient } from '../client.js';
 import type { AttachmentIO } from './attachments.js';
 import { jsonResponse } from './_shared.js';
 import { offsetState, readUpstreamPaging, withPaginationFirst } from './pagination.js';
-import { getWriteMode } from '../config.js';
+import { getExpenseUploadOnly, getWriteMode } from '../config.js';
 import { parseLenient } from '@chrischall/mcp-utils';
 
 const UploadedExpenseFileSchema = z.looseObject({
@@ -25,13 +25,14 @@ export function registerExpenseTools(
 ): void {
   // Expense writes land on the court-visible record — OFW_WRITE_MODE 'all' only.
   const writeMode = getWriteMode();
+  const uploadOnly = getExpenseUploadOnly();
   const allowWrites = writeMode === 'all';
   // A PRIVATE My Files upload is not visible to the co-parent until it is
   // attached to a shared object. Keep the same structural write gate as the
   // generic attachment uploader: unavailable only in OFW_WRITE_MODE=none.
   const allowPrivateUploads = writeMode !== 'none' && attachmentIO !== undefined;
 
-  server.registerTool('ofw_get_expense_totals', {
+  if (!uploadOnly) server.registerTool('ofw_get_expense_totals', {
     description: 'Get OurFamilyWizard expense summary totals (owed/paid)',
     annotations: { readOnlyHint: true },
   }, async () => {
@@ -39,7 +40,7 @@ export function registerExpenseTools(
     return jsonResponse(data);
   });
 
-  server.registerTool('ofw_list_expenses', {
+  if (!uploadOnly) server.registerTool('ofw_list_expenses', {
     description: 'List OurFamilyWizard expenses. Offset-paged via start/max. The response leads with its paging state — `hasMore` and `nextStart` (null when the list is exhausted) — BEFORE the records, so a truncated or partially-read response still says whether more remain. Never state an expense total or an absence from one page.',
     annotations: { readOnlyHint: true },
     inputSchema: z.object({
