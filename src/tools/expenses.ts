@@ -17,6 +17,59 @@ const UploadedExpenseFileSchema = z.looseObject({
 });
 
 const PDF_MIME = 'application/pdf';
+const MAX_REMOTE_PDF_BYTES = 25 * 1024 * 1024;
+
+async function resolveRemotePdf(urlValue: string, fileNameValue?: string): Promise<{
+  blob: Blob;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+}> {
+  const url = new URL(urlValue);
+  if (url.protocol !== 'https:') {
+    throw new Error('Remote expense receipt URLs must use HTTPS.');
+  }
+  if (!url.hostname.toLowerCase().endsWith('.oaiusercontent.com')) {
+    throw new Error('Remote expense receipt URLs must be signed oaiusercontent.com file URLs.');
+  }
+
+  const response = await fetch(url, { redirect: 'follow' });
+  if (!response.ok) {
+    throw new Error(`Unable to fetch remote expense receipt: HTTP ${response.status}`);
+  }
+
+  const declaredLength = Number(response.headers.get('content-length') ?? 0);
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_REMOTE_PDF_BYTES) {
+    throw new Error(`Expense receipt exceeds ${MAX_REMOTE_PDF_BYTES} bytes.`);
+  }
+
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.byteLength > MAX_REMOTE_PDF_BYTES) {
+    throw new Error(`Expense receipt exceeds ${MAX_REMOTE_PDF_BYTES} bytes.`);
+  }
+  if (
+    bytes.byteLength < 5 ||
+    bytes[0] !== 0x25 ||
+    bytes[1] !== 0x50 ||
+    bytes[2] !== 0x44 ||
+    bytes[3] !== 0x46 ||
+    bytes[4] !== 0x2d
+  ) {
+    throw new Error('Remote expense receipt is not a valid PDF file.');
+  }
+
+  const fileName = fileNameValue?.trim() || 'receipt.pdf';
+  if (!fileName.toLowerCase().endsWith('.pdf')) {
+    throw new Error(`Expense receipts must use a .pdf filename; received ${fileName}`);
+  }
+
+  return {
+    blob: new Blob([bytes], { type: PDF_MIME }),
+    fileName,
+    mimeType: PDF_MIME,
+    sizeBytes: bytes.byteLength,
+  };
+}
 
 export function registerExpenseTools(
   server: McpServer,
@@ -62,16 +115,24 @@ export function registerExpenseTools(
   });
 
   if (allowPrivateUploads) server.registerTool('ofw_upload_expense_pdf', {
-    description: 'Upload a PDF to OurFamilyWizard My Files for later attachment to an expense. This tool accepts PDF files only and always uploads them with shareClass PRIVATE so the file is not independently shared through My Files. The returned fileId can be passed to ofw_create_expense as receiptFileId.',
+    description: 'Upload a PDF to OurFamilyWizard My Files for later attachment to an expense. Accepts either a local path or a signed ChatGPT/oaiusercontent HTTPS URL plus fileName. Exactly one of path or url must be supplied. This tool accepts PDF files only and always uploads them with shareClass PRIVATE so the file is not independently shared through My Files. The returned fileId can be passed to ofw_create_expense as receiptFileId.',
     annotations: { readOnlyHint: false, destructiveHint: false },
     inputSchema: z.object({
-      path: z.string().describe('Absolute path to the PDF file to upload. Tilde (~) is expanded by the configured attachment I/O implementation.'),
+      path: z.string().describe('Absolute path to a local PDF file. Tilde (~) is expanded by the configured attachment I/O implementation. Mutually exclusive with url.').optional(),
+      url: z.string().describe('Signed HTTPS oaiusercontent.com URL for a PDF supplied by the ChatGPT host. Mutually exclusive with path.').optional(),
+      fileName: z.string().describe('Filename to use for a remote URL upload. Must end in .pdf. Defaults to receipt.pdf.').optional(),
       label: z.string().describe('Display label for the file in OFW (default: filename)').optional(),
       description: z.string().describe('Description shown in OFW My Files (default: filename)').optional(),
     }),
   }, async (args) => {
     const io = attachmentIO!;
-    const { blob, fileName, mimeType, sizeBytes } = await io.resolveUpload(args.path);
+    if ((args.path ? 1 : 0) + (args.url ? 1 : 0) !== 1) {
+      throw new Error('Pass exactly one of path or url to ofw_upload_expense_pdf.');
+    }
+
+    const { blob, fileName, mimeType, sizeBytes } = args.url
+      ? await resolveRemotePdf(args.url, args.fileName)
+      : await io.resolveUpload(args.path!);
     if (!fileName.toLowerCase().endsWith('.pdf') || mimeType !== PDF_MIME) {
       throw new Error(`Expense receipts must be PDF files; received ${fileName} (${mimeType})`);
     }
