@@ -112,6 +112,10 @@ Always pass `--config ~/.mcporter/mcporter.json` unless a local `config/mcporter
 | `ofw_update_event(eventId, ...)` | Partial update — only pass fields to change |
 | `ofw_delete_event(eventId)` | Permanent delete |
 
+### Restricted expense deployments
+
+When `OFW_EXPENSE_ONLY=true`, only the healthcheck and expense tools exist. When `OFW_EXPENSE_UPLOAD_ONLY=true`, only `ofw_healthcheck`, `ofw_upload_expense_pdf`, and `ofw_create_expense` exist. Do not suggest message/calendar/journal/profile tools in those deployments; they are structurally unregistered.
+
 ### Expenses
 | Tool | Notes |
 |------|-------|
