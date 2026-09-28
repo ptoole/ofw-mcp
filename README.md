@@ -234,6 +234,26 @@ The "Confirm" permission above is a *hint* to the MCP host — a host configured
 
 Unrecognized values fail closed to `none`, with a warning on stderr — a typo never silently grants write access.
 
+#### Expense-only deployments
+
+For a dedicated reimbursement integration, you can also structurally remove unrelated OFW capabilities:
+
+| Setting | Registered surface |
+|---|---|
+| `OFW_EXPENSE_ONLY=true` | `ofw_healthcheck` plus the expense tools only. Profile/dashboard, messages, calendar, and journal tools do not exist. |
+| `OFW_EXPENSE_UPLOAD_ONLY=true` | Strictest mode: `ofw_healthcheck`, `ofw_upload_expense_pdf`, and `ofw_create_expense` only. Expense totals/listing are removed too. This flag implies `OFW_EXPENSE_ONLY`. |
+
+These flags are registration-time restrictions, not prompt instructions. A host cannot call a tool that was never registered. Unrecognized non-empty flag values fail closed to the restricted state. `OFW_WRITE_MODE` still applies underneath; for the strict upload workflow set `OFW_WRITE_MODE=all` so expense creation is available.
+
+Recommended reimbursement-only deployment:
+
+```env
+OFW_EXPENSE_UPLOAD_ONLY=true
+OFW_WRITE_MODE=all
+OFW_ALLOW_MARK_READ=false
+```
+
+
 ### Reading is a write, too (`OFW_ALLOW_MARK_READ`)
 
 Fetching a message body for the first time marks it read on OurFamilyWizard and stamps a **"First Viewed" timestamp your co-parent can see**. That is part of the record and cannot be undone — and it happens as a side effect of an ordinary read, so `OFW_WRITE_MODE` does not govern it.
