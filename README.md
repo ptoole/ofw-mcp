@@ -151,7 +151,7 @@ Read-only tools run automatically. Write tools ask for your confirmation first. 
 | `ofw_delete_event` | Delete a calendar event | Confirm | `all` (or `drafts` + `OFW_CALENDAR_WRITES`) |
 | `ofw_get_expense_totals` | Expense summary totals | Auto | any |
 | `ofw_list_expenses` | Expense history | Auto | any |
-| `ofw_create_expense` | Log a new expense | Confirm | `all` |
+| `ofw_upload_expense_pdf` | Upload a PDF privately for an expense receipt | — | `drafts`, `all` |\n| `ofw_create_expense` | Log a new expense; supports private entries and one receipt PDF | Confirm | `all` |
 | `ofw_list_journal_entries` | Journal entries | Auto | any |
 | `ofw_create_journal_entry` | Create a journal entry | Confirm | `all` |
 
