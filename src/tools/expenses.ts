@@ -153,7 +153,7 @@ export function registerExpenseTools(
   });
 
   if (allowPrivateUploads) server.registerTool('ofw_upload_expense_pdf', {
-    description: 'Upload a PDF to OurFamilyWizard My Files for later attachment to an expense. Accepts either a local path or a signed ChatGPT/oaiusercontent HTTPS URL plus fileName. Exactly one of path or url must be supplied. This tool accepts PDF files only and uploads them using the same SHARED file metadata as the OFW expense form so the returned fileId can be attached to an expense. Expense visibility is controlled separately by ofw_create_expense privateExpense.'
+    description: 'Upload a PDF to OurFamilyWizard My Files for later attachment to an expense. Accepts either a local path or a signed ChatGPT/oaiusercontent HTTPS URL plus fileName. Exactly one of path or url must be supplied. This tool accepts PDF files only and uploads them using the same SHARED file metadata as the OFW expense form so the returned fileId can be attached to an expense. Expense visibility is controlled separately by ofw_create_expense privateExpense.',
     annotations: { readOnlyHint: false, destructiveHint: false },
     inputSchema: z.object({
       path: z.string().describe('Absolute path to a local PDF file. Tilde (~) is expanded by the configured attachment I/O implementation. Mutually exclusive with url.').optional(),
