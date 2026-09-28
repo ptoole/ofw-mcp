@@ -8,9 +8,7 @@
       ],
       "env": {
         "OFW_USERNAME": "${OFW_USERNAME}",
-        "OFW_PASSWORD": "${OFW_PASSWORD}",
-        "OFW_EXPENSE_UPLOAD_ONLY": "${OFW_EXPENSE_UPLOAD_ONLY}",
-        "OFW_WRITE_MODE": "${OFW_WRITE_MODE}"
+        "OFW_PASSWORD": "${OFW_PASSWORD}"
       }
     }
   }
