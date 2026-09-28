@@ -207,7 +207,7 @@ export function registerExpenseTools(
     inputSchema: z.object({
       title: z.string().trim().min(1).describe('Expense title/name shown in the OFW expense log'),
       amount: z.number().positive().describe('Full expense amount before OFW applies the category split'),
-      purchaseDate: z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/).describe('Date the expense was incurred, YYYY-MM-DD'),
+      purchaseDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Date the expense was incurred, YYYY-MM-DD'),
       categoryId: z.number().int().positive().describe('OFW expense category id (for example General is commonly id 1; use the id from OFW, not the category display name)'),
       payerId: z.number().int().positive().describe('OFW userId of the parent who owes/reimburses this expense'),
       children: z.array(z.number().int().positive()).min(1).describe('One or more OFW child userIds associated with the expense'),
