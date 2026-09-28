@@ -1,13 +1,35 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import type { OFWClient } from '../client.js';
+import type { AttachmentIO } from './attachments.js';
 import { jsonResponse } from './_shared.js';
 import { offsetState, readUpstreamPaging, withPaginationFirst } from './pagination.js';
 import { getWriteMode } from '../config.js';
+import { parseLenient } from '@chrischall/mcp-utils';
 
-export function registerExpenseTools(server: McpServer, client: OFWClient): void {
+const UploadedExpenseFileSchema = z.looseObject({
+  fileId: z.number(),
+  fileName: z.string().optional(),
+  label: z.string().optional(),
+  fileType: z.string().optional(),
+  sizeInBytes: z.number().optional(),
+  shareClass: z.string().optional(),
+});
+
+const PDF_MIME = 'application/pdf';
+
+export function registerExpenseTools(
+  server: McpServer,
+  client: OFWClient,
+  attachmentIO?: AttachmentIO,
+): void {
   // Expense writes land on the court-visible record — OFW_WRITE_MODE 'all' only.
-  const allowWrites = getWriteMode() === 'all';
+  const writeMode = getWriteMode();
+  const allowWrites = writeMode === 'all';
+  // A PRIVATE My Files upload is not visible to the co-parent until it is
+  // attached to a shared object. Keep the same structural write gate as the
+  // generic attachment uploader: unavailable only in OFW_WRITE_MODE=none.
+  const allowPrivateUploads = writeMode !== 'none' && attachmentIO !== undefined;
 
   server.registerTool('ofw_get_expense_totals', {
     description: 'Get OurFamilyWizard expense summary totals (owed/paid)',
@@ -28,13 +50,6 @@ export function registerExpenseTools(server: McpServer, client: OFWClient): void
     const start = args.start ?? 0;
     const max = args.max ?? 20;
     const data = await client.request('GET', `/pub/v2/expense/expenses?start=${start}&max=${max}`);
-    // Paging state FIRST, records after — a partial read of a spilled response
-    // must reach "there are more" before it reaches the records. See
-    // src/tools/pagination.ts for why the order is load-bearing.
-    //
-    // OFW wraps these listings as {data, metadata} and its metadata carries a
-    // `last` boolean, so "is there another page" is answered by the server
-    // rather than inferred from a full page (verified live).
     const { returned, total, last } = readUpstreamPaging(data);
     const wrapped = withPaginationFirst({
       state: offsetState({ start, max, returned, total, last, base: 0 }),
@@ -42,21 +57,74 @@ export function registerExpenseTools(server: McpServer, client: OFWClient): void
       hint: `Re-call ofw_list_expenses with start:${start + max}.`,
       payload: data,
     });
-    // A payload that is not a plain object cannot carry the paging keys at all.
-    // Pass it through untouched rather than relocating it — an added field is
-    // never worth changing a response's top-level shape.
     return jsonResponse(wrapped ?? data);
   });
 
-  if (allowWrites) server.registerTool('ofw_create_expense', {
-    description: 'Log a new expense in OurFamilyWizard',
-    annotations: { destructiveHint: false },
+  if (allowPrivateUploads) server.registerTool('ofw_upload_expense_pdf', {
+    description: 'Upload a PDF to OurFamilyWizard My Files for later attachment to an expense. This tool accepts PDF files only and always uploads them with shareClass PRIVATE so the file is not independently shared through My Files. The returned fileId can be passed to ofw_create_expense as receiptFileId.',
+    annotations: { readOnlyHint: false, destructiveHint: false },
     inputSchema: z.object({
-      amount: z.number().describe('Expense amount'),
-      description: z.string().describe('Expense description'),
+      path: z.string().describe('Absolute path to the PDF file to upload. Tilde (~) is expanded by the configured attachment I/O implementation.'),
+      label: z.string().describe('Display label for the file in OFW (default: filename)').optional(),
+      description: z.string().describe('Description shown in OFW My Files (default: filename)').optional(),
     }),
   }, async (args) => {
-    const data = await client.request('POST', '/pub/v2/expense/expenses', args);
+    const io = attachmentIO!;
+    const { blob, fileName, mimeType, sizeBytes } = await io.resolveUpload(args.path);
+    if (!fileName.toLowerCase().endsWith('.pdf') || mimeType !== PDF_MIME) {
+      throw new Error(`Expense receipts must be PDF files; received ${fileName} (${mimeType})`);
+    }
+
+    const form = new FormData();
+    form.append('file', blob, fileName);
+    form.append('source', 'expense');
+    form.append('description', args.description ?? fileName);
+    form.append('label', args.label ?? fileName);
+    form.append('fileName', fileName);
+    // Deliberately not caller-configurable. Expense receipts are uploaded
+    // privately and become visible only through the expense they are attached to.
+    form.append('shareClass', 'PRIVATE');
+
+    const meta = parseLenient(
+      UploadedExpenseFileSchema,
+      await client.request('POST', '/pub/v3/myfiles/multipart', form),
+      { label: 'ofw-mcp', context: 'POST /pub/v3/myfiles/multipart (ofw_upload_expense_pdf)', mode: 'strict' },
+    );
+
+    return jsonResponse({
+      fileId: meta.fileId,
+      fileName: meta.fileName ?? fileName,
+      mimeType: meta.fileType ?? mimeType,
+      sizeBytes: meta.sizeInBytes ?? sizeBytes,
+      shareClass: 'PRIVATE',
+      note: 'Pass fileId to ofw_create_expense as receiptFileId. The My Files object itself remains PRIVATE.',
+    });
+  });
+
+  if (allowWrites) server.registerTool('ofw_create_expense', {
+    description: 'Log a new expense in OurFamilyWizard. Supports attaching one previously-uploaded receipt PDF and marking the expense private. privateExpense=true creates an expense visible only to you; false/default creates the normal shared expense. receiptFileId should come from ofw_upload_expense_pdf.',
+    annotations: { readOnlyHint: false, destructiveHint: true },
+    inputSchema: z.object({
+      amount: z.number().positive().describe('Expense amount'),
+      description: z.string().min(1).describe('Expense description'),
+      privateExpense: z.boolean().describe('true = visible only to you; false/default = shared with co-parent').optional(),
+      receiptFileId: z.number().int().positive().describe('Single OFW My Files fileId to attach as the receipt, normally returned by ofw_upload_expense_pdf').optional(),
+    }),
+  }, async (args) => {
+    const payload: Record<string, unknown> = {
+      amount: args.amount,
+      description: args.description,
+    };
+
+    // OFW uses publicFlag for visibility on its other record-creation APIs.
+    // Keep the MCP-facing name explicit and human-readable.
+    if (args.privateExpense !== undefined) payload.publicFlag = !args.privateExpense;
+
+    // Expense supports one receipt. Keep the tool singular so callers cannot
+    // accidentally publish multiple evidence files against one expense.
+    if (args.receiptFileId !== undefined) payload.receiptFileId = args.receiptFileId;
+
+    const data = await client.request('POST', '/pub/v2/expense/expenses', payload);
     return jsonResponse(data);
   });
 }
