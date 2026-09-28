@@ -222,14 +222,30 @@ describe('ofw_create_expense', () => {
     else process.env.OFW_WRITE_MODE = original;
   });
 
-  it('posts the legacy amount/description shape when optional fields are omitted', async () => {
+  it('posts the current OFW expense-form payload', async () => {
     const client = makeClient({ id: 99 });
     setup(client, makeAttachmentIO());
-    const result = await handlers.get('ofw_create_expense')!({ amount: 50, description: 'School supplies' });
+    const result = await handlers.get('ofw_create_expense')!({
+      title: 'School supplies',
+      amount: 50,
+      purchaseDate: '2026-09-20',
+      categoryId: 1,
+      payerId: 2196509,
+      children: [2196512],
+      description: 'Aaron school supplies',
+    });
     expect(client.request).toHaveBeenCalledWith(
       'POST',
       '/pub/v2/expense/expenses',
-      { amount: 50, description: 'School supplies' },
+      {
+        title: 'School supplies',
+        amount: 50,
+        purchaseDate: '2026-09-20',
+        categoryId: 1,
+        payerId: 2196509,
+        children: [2196512],
+        description: 'Aaron school supplies',
+      },
     );
     expect(result.content).toHaveLength(1);
   });
@@ -238,7 +254,12 @@ describe('ofw_create_expense', () => {
     const client = makeClient({ id: 100 });
     setup(client, makeAttachmentIO());
     await handlers.get('ofw_create_expense')!({
+      title: 'Medical copay',
       amount: 42.25,
+      purchaseDate: '2026-09-19',
+      categoryId: 2,
+      payerId: 2196509,
+      children: [2196512],
       description: 'Medical copay',
       privateExpense: true,
       receiptFileId: 777,
@@ -247,7 +268,12 @@ describe('ofw_create_expense', () => {
       'POST',
       '/pub/v2/expense/expenses',
       {
+        title: 'Medical copay',
         amount: 42.25,
+        purchaseDate: '2026-09-19',
+        categoryId: 2,
+        payerId: 2196509,
+        children: [2196512],
         description: 'Medical copay',
         publicFlag: false,
         receiptFileId: 777,
@@ -259,15 +285,64 @@ describe('ofw_create_expense', () => {
     const client = makeClient({ id: 101 });
     setup(client, makeAttachmentIO());
     await handlers.get('ofw_create_expense')!({
+      title: 'Shared',
       amount: 10,
-      description: 'Shared',
+      purchaseDate: '2026-09-18',
+      categoryId: 1,
+      payerId: 2196509,
+      children: [2196510, 2196511, 2196512],
       privateExpense: false,
     });
     expect(client.request).toHaveBeenCalledWith(
       'POST',
       '/pub/v2/expense/expenses',
-      { amount: 10, description: 'Shared', publicFlag: true },
+      {
+        title: 'Shared',
+        amount: 10,
+        purchaseDate: '2026-09-18',
+        categoryId: 1,
+        payerId: 2196509,
+        children: [2196510, 2196511, 2196512],
+        publicFlag: true,
+      },
     );
+  });
+
+  it('requires title, purchase date, category, payer, and at least one child', () => {
+    const server = new McpServer({ name: 'test', version: '0.0.0' });
+    const configs = new Map<string, { inputSchema?: z.ZodObject }>();
+    vi.spyOn(server, 'registerTool').mockImplementation((name: string, config: unknown) => {
+      configs.set(name, config as { inputSchema?: z.ZodObject });
+      return undefined as never;
+    });
+    registerExpenseTools(server, new OFWClient(), makeAttachmentIO());
+
+    const schema = configs.get('ofw_create_expense')!.inputSchema!;
+    expect(schema.safeParse({
+      title: 'Expense',
+      amount: 10,
+      purchaseDate: '2026-09-28',
+      categoryId: 1,
+      payerId: 2196509,
+      children: [2196512],
+    }).success).toBe(true);
+    expect(schema.safeParse({ amount: 10, description: 'legacy' }).success).toBe(false);
+    expect(schema.safeParse({
+      title: 'Expense',
+      amount: 10,
+      purchaseDate: '09/28/2026',
+      categoryId: 1,
+      payerId: 2196509,
+      children: [2196512],
+    }).success).toBe(false);
+    expect(schema.safeParse({
+      title: 'Expense',
+      amount: 10,
+      purchaseDate: '2026-09-28',
+      categoryId: 1,
+      payerId: 2196509,
+      children: [],
+    }).success).toBe(false);
   });
 });
 
