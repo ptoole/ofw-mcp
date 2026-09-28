@@ -197,10 +197,14 @@ curl -s -X DELETE "https://ofw.ourfamilywizard.com/pub/v1/calendar/events/${EVEN
 curl -s 'https://ofw.ourfamilywizard.com/pub/v2/expense/expenses/totals' "${AUTH_HEADERS[@]}" | jq .
 ```
 
-**List expenses** (offset-based, 0-indexed `start`):
+**List expenses** (page-based, 1-indexed `page`):
+
+OFW currently ignores the legacy `start`/`max` query parameters and returns
+page 1 repeatedly. Use `page`/`size` and follow the response metadata's
+`last` flag / `currentPage`.
 
 ```sh
-curl -s 'https://ofw.ourfamilywizard.com/pub/v2/expense/expenses?start=0&max=20' "${AUTH_HEADERS[@]}" | jq .
+curl -s 'https://ofw.ourfamilywizard.com/pub/v2/expense/expenses?page=1&size=20' "${AUTH_HEADERS[@]}" | jq .
 ```
 
 **Upload a receipt PDF privately** (write to My Files; not independently shared):
