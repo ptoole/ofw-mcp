@@ -127,6 +127,79 @@ describe('ofw_upload_expense_pdf', () => {
     expect(parsed.shareClass).toBe('PRIVATE');
   });
 
+  it('uploads a signed hosted PDF URL without using local AttachmentIO', async () => {
+    const client = makeClient({
+      fileId: 456,
+      fileName: 'receipt.pdf',
+      fileType: 'application/pdf',
+      sizeInBytes: 9,
+      shareClass: 'PRIVATE',
+    });
+    const io = makeAttachmentIO();
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34, 0x0a]), {
+        status: 200,
+        headers: {
+          'content-type': 'application/pdf',
+          'content-length': '9',
+        },
+      }),
+    );
+
+    setup(client, io);
+    const result = await handlers.get('ofw_upload_expense_pdf')!({
+      url: 'https://example.oaiusercontent.com/files/receipt/raw?sig=test',
+      fileName: 'receipt.pdf',
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(io.resolveUpload).not.toHaveBeenCalled();
+
+    const call = vi.mocked(client.request).mock.calls[0];
+    expect(call[0]).toBe('POST');
+    expect(call[1]).toBe('/pub/v3/myfiles/multipart');
+    const form = call[2] as FormData;
+    expect(form.get('source')).toBe('expense');
+    expect(form.get('shareClass')).toBe('PRIVATE');
+    expect(form.get('fileName')).toBe('receipt.pdf');
+
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.fileId).toBe(456);
+    expect(parsed.shareClass).toBe('PRIVATE');
+  });
+
+  it('rejects untrusted remote PDF hosts before calling OFW', async () => {
+    const client = makeClient({});
+    setup(client, makeAttachmentIO());
+
+    await expect(
+      handlers.get('ofw_upload_expense_pdf')!({
+        url: 'https://example.com/receipt.pdf',
+        fileName: 'receipt.pdf',
+      }),
+    ).rejects.toThrow(/oaiusercontent\.com/i);
+    expect(client.request).not.toHaveBeenCalled();
+  });
+
+  it('requires exactly one upload source', async () => {
+    const client = makeClient({});
+    setup(client, makeAttachmentIO());
+
+    await expect(
+      handlers.get('ofw_upload_expense_pdf')!({ fileName: 'receipt.pdf' }),
+    ).rejects.toThrow(/exactly one of path or url/i);
+
+    await expect(
+      handlers.get('ofw_upload_expense_pdf')!({
+        path: '/tmp/receipt.pdf',
+        url: 'https://example.oaiusercontent.com/files/receipt/raw?sig=test',
+        fileName: 'receipt.pdf',
+      }),
+    ).rejects.toThrow(/exactly one of path or url/i);
+    expect(client.request).not.toHaveBeenCalled();
+  });
+
   it('rejects non-PDF uploads before calling OFW', async () => {
     const client = makeClient({});
     setup(client, makeAttachmentIO('receipt.jpg', 'image/jpeg'));
