@@ -2,10 +2,15 @@
   "mcpServers": {
     "ofw": {
       "command": "npx",
-      "args": ["-y", "ofw-mcp"],
+      "args": [
+        "-y",
+        "ofw-mcp"
+      ],
       "env": {
         "OFW_USERNAME": "${OFW_USERNAME}",
-        "OFW_PASSWORD": "${OFW_PASSWORD}"
+        "OFW_PASSWORD": "${OFW_PASSWORD}",
+        "OFW_EXPENSE_UPLOAD_ONLY": "${OFW_EXPENSE_UPLOAD_ONLY}",
+        "OFW_WRITE_MODE": "${OFW_WRITE_MODE}"
       }
     }
   }
