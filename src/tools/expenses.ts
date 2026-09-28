@@ -236,7 +236,7 @@ export function registerExpenseTools(
     // argument singular so callers still attach at most one canonical receipt.
     if (args.receiptFileId !== undefined) payload.fileIds = [args.receiptFileId];
 
-    const data = await client.request('POST', '/pub/v2/expense/expenses', payload);
+    const data = await client.request('POST', '/pub/v2/expense', payload);
     return jsonResponse(data);
   });
 }
