@@ -202,7 +202,7 @@ export function registerExpenseTools(
   });
 
   if (allowWrites) server.registerTool('ofw_create_expense', {
-    description: 'Log a new expense in OurFamilyWizard using the current web-app expense contract. Required fields are title, amount, purchaseDate, categoryId, payerId (the parent who owes), and at least one child user id. Supports one previously-uploaded receipt PDF and private entries. privateExpense=true creates an expense visible only to you; false/default creates the normal shared expense. receiptFileId should come from ofw_upload_expense_pdf.'
+    description: 'Log a new expense in OurFamilyWizard using the current web-app expense contract. Required fields are title, amount, purchaseDate, categoryId, payerId (the parent who owes), and at least one child user id. Supports one previously-uploaded receipt PDF and private entries. privateExpense=true creates an expense visible only to you; false/default creates the normal shared expense. receiptFileId should come from ofw_upload_expense_pdf.',
     annotations: { readOnlyHint: false, destructiveHint: true },
     inputSchema: z.object({
       title: z.string().trim().min(1).describe('Expense title/name shown in the OFW expense log'),
