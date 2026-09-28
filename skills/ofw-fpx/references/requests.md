@@ -220,15 +220,32 @@ Use the returned `fileId` as `receiptFileId` when creating the expense.
 
 **Create an expense** (write):
 
+The current OFW expense form requires a complete expense record. In addition to
+the amount, send the expense title, purchase date, category id, parent who owes
+(`payerId`), and at least one child user id. Description, visibility, and a
+single receipt file are optional.
+
 ```sh
 curl -s -X POST 'https://ofw.ourfamilywizard.com/pub/v2/expense/expenses' \
   "${AUTH_HEADERS[@]}" -H 'Content-Type: application/json' \
-  --data '{"amount":45.00,"description":"Cleats for soccer","publicFlag":true,"receiptFileId":12345}' | jq .
+  --data '{
+    "title":"Soccer cleats",
+    "amount":45.00,
+    "purchaseDate":"2026-09-28",
+    "categoryId":1,
+    "payerId":2196509,
+    "children":[2196512],
+    "description":"Cleats for soccer",
+    "publicFlag":true,
+    "receiptFileId":12345
+  }' | jq .
 ```
 
-For a private expense, send `publicFlag:false`. The MCP-facing `privateExpense`
-argument is inverted into this wire field so callers do not have to reason in
-double negatives. Expense creation supports a single receipt file.
+Use OFW numeric ids, not display labels, for `categoryId`, `payerId`, and
+`children`. For a private expense, send `publicFlag:false`. The MCP-facing
+`privateExpense` argument is inverted into this wire field so callers do not
+have to reason in double negatives. Expense creation supports a single receipt
+file.
 
 ## 8. Journal
 
