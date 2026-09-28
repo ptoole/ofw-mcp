@@ -19,7 +19,8 @@ import { registerCalendarTools } from './tools/calendar.js';
 import { registerExpenseTools } from './tools/expenses.js';
 import { registerJournalTools } from './tools/journal.js';
 import { OFWCache } from './cache/node.js';
-import { getCacheDbPath, getExpenseOnly } from './config.js';
+import { getCacheDbPath } from './config.js';
+import { selectToolRegistrars } from './tool-surface.js';
 import { NodeAttachmentIO } from './tools/attachments.js';
 import type { CacheStore } from './cache/store.js';
 
@@ -41,23 +42,19 @@ const nodeAttachmentIO = new NodeAttachmentIO();
 const expenseRegistrar = (server: Parameters<typeof registerExpenseTools>[0], deps: typeof client) =>
   registerExpenseTools(server, deps, nodeAttachmentIO);
 
-const tools = getExpenseOnly()
-  ? [
-      // Restricted deployments expose only a credential healthcheck and the
-      // expense registrar. OFW_EXPENSE_UPLOAD_ONLY is enforced inside that
-      // registrar so even expense reads disappear in the strictest mode.
-      registerHealthcheckTools,
-      expenseRegistrar,
-    ]
-  : [
-      registerHealthcheckTools,
-      registerUserTools,
-      (server: Parameters<typeof registerMessageTools>[0], deps: typeof client) =>
-        registerMessageTools(server, deps, nodeCacheProvider, nodeAttachmentIO),
-      registerCalendarTools,
-      expenseRegistrar,
-      registerJournalTools,
-    ];
+const messageRegistrar = (
+  server: Parameters<typeof registerMessageTools>[0],
+  deps: typeof client,
+) => registerMessageTools(server, deps, nodeCacheProvider, nodeAttachmentIO);
+
+const tools = selectToolRegistrars({
+  healthcheck: registerHealthcheckTools,
+  user: registerUserTools,
+  messages: messageRegistrar,
+  calendar: registerCalendarTools,
+  expenses: expenseRegistrar,
+  journal: registerJournalTools,
+});
 
 await runMcp({
   name: 'ofw',
