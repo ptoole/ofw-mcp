@@ -63,9 +63,9 @@ describe('ofw_list_expense_categories', () => {
       data: [
         {
           id: 9001,
-          title: 'MSA Split',
-          description: 'Split Based on MSA.',
-          split: { parentSplit: '56', coparentSplit: '44' },
+          title: 'Shared Category',
+          description: 'Synthetic shared category.',
+          split: { parentSplit: '50', coparentSplit: '50' },
         },
       ],
     };
@@ -292,9 +292,9 @@ describe('ofw_create_expense', () => {
       amount: 50,
       purchaseDate: '2026-09-20',
       categoryId: 1,
-      payerId: 2196509,
-      children: [2196512],
-      description: 'Aaron school supplies',
+      payerId: 101,
+      children: [203],
+      description: 'School supplies',
     });
     expect(client.request).toHaveBeenCalledWith(
       'POST',
@@ -304,9 +304,9 @@ describe('ofw_create_expense', () => {
         amount: 50,
         purchaseDate: '2026-09-20',
         categoryId: 1,
-        payerId: 2196509,
-        children: [2196512],
-        description: 'Aaron school supplies',
+        payerId: 101,
+        children: [203],
+        description: 'School supplies',
       },
     );
     expect(result.content).toHaveLength(1);
@@ -320,8 +320,8 @@ describe('ofw_create_expense', () => {
       amount: 42.25,
       purchaseDate: '2026-09-19',
       categoryId: 2,
-      payerId: 2196509,
-      children: [2196512],
+      payerId: 101,
+      children: [203],
       description: 'Medical copay',
       privateExpense: true,
       receiptFileId: 777,
@@ -334,8 +334,8 @@ describe('ofw_create_expense', () => {
         amount: 42.25,
         purchaseDate: '2026-09-19',
         categoryId: 2,
-        payerId: 2196509,
-        children: [2196512],
+        payerId: 101,
+        children: [203],
         description: 'Medical copay',
         isPrivate: true,
         fileIds: [777],
@@ -351,8 +351,8 @@ describe('ofw_create_expense', () => {
       amount: 10,
       purchaseDate: '2026-09-18',
       categoryId: 1,
-      payerId: 2196509,
-      children: [2196510, 2196511, 2196512],
+      payerId: 101,
+      children: [201, 202, 203],
       privateExpense: false,
     });
     expect(client.request).toHaveBeenCalledWith(
@@ -363,8 +363,8 @@ describe('ofw_create_expense', () => {
         amount: 10,
         purchaseDate: '2026-09-18',
         categoryId: 1,
-        payerId: 2196509,
-        children: [2196510, 2196511, 2196512],
+        payerId: 101,
+        children: [201, 202, 203],
         isPrivate: false,
       },
     );
@@ -385,8 +385,8 @@ describe('ofw_create_expense', () => {
       amount: 10,
       purchaseDate: '2026-09-28',
       categoryId: 1,
-      payerId: 2196509,
-      children: [2196512],
+      payerId: 101,
+      children: [203],
     }).success).toBe(true);
     expect(schema.safeParse({ amount: 10, description: 'legacy' }).success).toBe(false);
     expect(schema.safeParse({
@@ -394,15 +394,15 @@ describe('ofw_create_expense', () => {
       amount: 10,
       purchaseDate: '09/28/2026',
       categoryId: 1,
-      payerId: 2196509,
-      children: [2196512],
+      payerId: 101,
+      children: [203],
     }).success).toBe(false);
     expect(schema.safeParse({
       title: 'Expense',
       amount: 10,
       purchaseDate: '2026-09-28',
       categoryId: 1,
-      payerId: 2196509,
+      payerId: 101,
       children: [],
     }).success).toBe(false);
   });
@@ -420,32 +420,32 @@ describe('ofw_update_expense', () => {
   });
 
   it('publishes a private expense with the full OFW web-app payload', async () => {
-    const client = makeClient({ id: 12322018 });
+    const client = makeClient({ id: 9001 });
     setup(client, makeAttachmentIO());
     await handlers.get('ofw_update_expense')!({
-      expenseId: 12322018,
-      title: 'Verizon September - Aaron 561-566-4603',
+      expenseId: 9001,
+      title: 'Sample recurring service expense',
       categoryId: 304873,
       amount: 35.87,
       purchaseDate: '2026-09-09',
-      receiptFileId: 60449328,
+      receiptFileId: 7001,
       privateExpense: false,
-      payerId: 2196509,
-      children: [2196512],
+      payerId: 101,
+      children: [203],
     });
 
     expect(client.request).toHaveBeenCalledWith(
       'PUT',
-      '/pub/v2/expense/expenses/12322018',
+      '/pub/v2/expense/expenses/9001',
       {
-        title: 'Verizon September - Aaron 561-566-4603',
+        title: 'Sample recurring service expense',
         amount: 35.87,
         purchaseDate: '2026-09-09',
         categoryId: 304873,
-        payerId: 2196509,
-        children: [2196512],
+        payerId: 101,
+        children: [203],
         isPrivate: false,
-        fileIds: [60449328],
+        fileIds: [7001],
       },
     );
   });
@@ -467,8 +467,8 @@ describe('ofw_update_expense', () => {
       amount: 10,
       purchaseDate: '2026-09-28',
       categoryId: 1,
-      payerId: 2196509,
-      children: [2196512],
+      payerId: 101,
+      children: [203],
       privateExpense: false,
     }).success).toBe(true);
     expect(schema.safeParse({
@@ -477,8 +477,8 @@ describe('ofw_update_expense', () => {
       amount: 10,
       purchaseDate: '2026-09-28',
       categoryId: 1,
-      payerId: 2196509,
-      children: [2196512],
+      payerId: 101,
+      children: [203],
     }).success).toBe(false);
   });
 });
