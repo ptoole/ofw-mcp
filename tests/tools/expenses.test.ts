@@ -253,3 +253,37 @@ describe('OFW_WRITE_MODE gating', () => {
     expect(handlers.has('ofw_upload_expense_pdf')).toBe(true);
   });
 });
+
+
+describe('OFW_EXPENSE_UPLOAD_ONLY gating', () => {
+  let originalMode: string | undefined;
+  let originalOnly: string | undefined;
+  let originalUploadOnly: string | undefined;
+
+  beforeEach(() => {
+    originalMode = process.env.OFW_WRITE_MODE;
+    originalOnly = process.env.OFW_EXPENSE_ONLY;
+    originalUploadOnly = process.env.OFW_EXPENSE_UPLOAD_ONLY;
+    process.env.OFW_WRITE_MODE = 'all';
+    delete process.env.OFW_EXPENSE_ONLY;
+    process.env.OFW_EXPENSE_UPLOAD_ONLY = 'true';
+  });
+
+  afterEach(() => {
+    if (originalMode === undefined) delete process.env.OFW_WRITE_MODE;
+    else process.env.OFW_WRITE_MODE = originalMode;
+    if (originalOnly === undefined) delete process.env.OFW_EXPENSE_ONLY;
+    else process.env.OFW_EXPENSE_ONLY = originalOnly;
+    if (originalUploadOnly === undefined) delete process.env.OFW_EXPENSE_UPLOAD_ONLY;
+    else process.env.OFW_EXPENSE_UPLOAD_ONLY = originalUploadOnly;
+  });
+
+  it('registers only the upload/create expense tools inside the expense registrar', () => {
+    setup(makeClient({}), makeAttachmentIO());
+    expect([...handlers.keys()].sort()).toEqual([
+      'ofw_create_expense',
+      'ofw_upload_expense_pdf',
+    ]);
+  });
+});
+
