@@ -47,7 +47,7 @@ await runMcp({
     registerUserTools,
     (server, deps) => registerMessageTools(server, deps, nodeCacheProvider, nodeAttachmentIO),
     registerCalendarTools,
-    registerExpenseTools,
+    (server, deps) => registerExpenseTools(server, deps, nodeAttachmentIO),
     registerJournalTools,
   ],
   banner:
