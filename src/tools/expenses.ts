@@ -93,6 +93,14 @@ export function registerExpenseTools(
     return jsonResponse(data);
   });
 
+  if (!uploadOnly) server.registerTool('ofw_list_expense_categories', {
+    description: 'List OurFamilyWizard expense categories, including preset and custom categories with their responsibility split metadata. Read-only.',
+    annotations: { readOnlyHint: true },
+  }, async () => {
+    const data = await client.request('GET', '/pub/v2/expense/categories');
+    return jsonResponse(data);
+  });
+
   if (!uploadOnly) server.registerTool('ofw_list_expenses', {
     description: 'List OurFamilyWizard expenses. OFW pages this endpoint with 1-based page/size parameters; its older start/max parameters are ignored and repeatedly return page 1. The response leads with hasMore and nextPage (null when exhausted) before the records. Continue by passing nextPage.',
     annotations: { readOnlyHint: true },
