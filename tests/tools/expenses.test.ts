@@ -58,13 +58,13 @@ describe('ofw_get_expense_totals', () => {
 });
 
 describe('ofw_list_expenses', () => {
-  it('calls expenses with default pagination', async () => {
-    const client = makeClient([]);
+  it('calls expenses with default page-based pagination', async () => {
+    const client = makeClient({ data: [], metadata: { currentPage: 1, perPage: 20, last: true } });
     setup(client);
     await handlers.get('ofw_list_expenses')!({});
     expect(client.request).toHaveBeenCalledWith(
       'GET',
-      '/pub/v2/expense/expenses?start=0&max=20'
+      '/pub/v2/expense/expenses?page=1&size=20'
     );
   });
 
@@ -78,14 +78,39 @@ describe('ofw_list_expenses', () => {
     expect(parsed.message).toBe('no records');
   });
 
-  it('passes custom start and max', async () => {
-    const client = makeClient([]);
+  it('passes custom page and size', async () => {
+    const client = makeClient({ data: [], metadata: { currentPage: 3, perPage: 10, last: true } });
     setup(client);
-    await handlers.get('ofw_list_expenses')!({ start: 20, max: 10 });
+    await handlers.get('ofw_list_expenses')!({ page: 3, size: 10 });
     expect(client.request).toHaveBeenCalledWith(
       'GET',
-      '/pub/v2/expense/expenses?start=20&max=10'
+      '/pub/v2/expense/expenses?page=3&size=10'
     );
+  });
+
+  it('uses OFW metadata to expose the next page', async () => {
+    const client = makeClient({
+      data: [{ id: 1 }, { id: 2 }],
+      metadata: { currentPage: 1, page: 1, perPage: 20, count: 20, first: true, last: false },
+    });
+    setup(client);
+    const parsed = JSON.parse((await handlers.get('ofw_list_expenses')!({ page: 1, size: 20 })).content[0].text);
+    expect(parsed.hasMore).toBe(true);
+    expect(parsed.nextPage).toBe(2);
+    expect(parsed.page).toBe(1);
+    expect(parsed.size).toBe(20);
+    expect(parsed.returned).toBe(2);
+  });
+
+  it('stops pagination when OFW metadata marks the page last', async () => {
+    const client = makeClient({
+      data: [{ id: 99 }],
+      metadata: { currentPage: 4, page: 4, perPage: 20, count: 20, first: false, last: true },
+    });
+    setup(client);
+    const parsed = JSON.parse((await handlers.get('ofw_list_expenses')!({ page: 4 })).content[0].text);
+    expect(parsed.hasMore).toBe(false);
+    expect(parsed.nextPage).toBeNull();
   });
 });
 
@@ -347,7 +372,7 @@ describe('ofw_create_expense', () => {
 });
 
 describe('expense input schemas', () => {
-  it('rejects negative start and non-positive/fractional max', () => {
+  it('rejects invalid expense page and size values', () => {
     const server = new McpServer({ name: 'test', version: '0.0.0' });
     const configs = new Map<string, { inputSchema?: z.ZodObject }>();
     vi.spyOn(server, 'registerTool').mockImplementation((name: string, config: unknown, _cb: unknown) => {
@@ -357,10 +382,11 @@ describe('expense input schemas', () => {
     registerExpenseTools(server, new OFWClient(), makeAttachmentIO());
 
     const schema = configs.get('ofw_list_expenses')!.inputSchema!;
-    expect(schema.safeParse({ start: -1 }).success).toBe(false);
-    expect(schema.safeParse({ max: 0 }).success).toBe(false);
-    expect(schema.safeParse({ max: 2.5 }).success).toBe(false);
-    expect(schema.safeParse({ start: 0, max: 20 }).success).toBe(true);
+    expect(schema.safeParse({ page: 0 }).success).toBe(false);
+    expect(schema.safeParse({ size: 0 }).success).toBe(false);
+    expect(schema.safeParse({ size: 2.5 }).success).toBe(false);
+    expect(schema.safeParse({ size: 101 }).success).toBe(false);
+    expect(schema.safeParse({ page: 1, size: 20 }).success).toBe(true);
   });
 });
 
