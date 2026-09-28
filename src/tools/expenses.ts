@@ -153,7 +153,7 @@ export function registerExpenseTools(
   });
 
   if (allowPrivateUploads) server.registerTool('ofw_upload_expense_pdf', {
-    description: 'Upload a PDF to OurFamilyWizard My Files for later attachment to an expense. Accepts either a local path or a signed ChatGPT/oaiusercontent HTTPS URL plus fileName. Exactly one of path or url must be supplied. This tool accepts PDF files only and always uploads them with shareClass PRIVATE so the file is not independently shared through My Files. The returned fileId can be passed to ofw_create_expense as receiptFileId.',
+    description: 'Upload a PDF to OurFamilyWizard My Files for later attachment to an expense. Accepts either a local path or a signed ChatGPT/oaiusercontent HTTPS URL plus fileName. Exactly one of path or url must be supplied. This tool accepts PDF files only and uploads them using the same SHARED file metadata as the OFW expense form so the returned fileId can be attached to an expense. Expense visibility is controlled separately by ofw_create_expense privateExpense.'
     annotations: { readOnlyHint: false, destructiveHint: false },
     inputSchema: z.object({
       path: z.string().describe('Absolute path to a local PDF file. Tilde (~) is expanded by the configured attachment I/O implementation. Mutually exclusive with url.').optional(),
@@ -181,9 +181,11 @@ export function registerExpenseTools(
     form.append('description', args.description ?? fileName);
     form.append('label', args.label ?? fileName);
     form.append('fileName', fileName);
-    // Deliberately not caller-configurable. Expense receipts are uploaded
-    // privately and become visible only through the expense they are attached to.
-    form.append('shareClass', 'PRIVATE');
+    // Match the OFW expense form upload contract. The attachment itself is
+    // uploaded as SHARED so it is eligible for fileIds on an expense. Expense
+    // visibility is controlled separately by the expense's isPrivate flag.
+    form.append('shared', 'true');
+    form.append('shareClass', 'SHARED');
 
     const meta = parseLenient(
       UploadedExpenseFileSchema,
@@ -196,8 +198,8 @@ export function registerExpenseTools(
       fileName: meta.fileName ?? fileName,
       mimeType: meta.fileType ?? mimeType,
       sizeBytes: meta.sizeInBytes ?? sizeBytes,
-      shareClass: 'PRIVATE',
-      note: 'Pass fileId to ofw_create_expense as receiptFileId. The My Files object itself remains PRIVATE.',
+      shareClass: meta.shareClass ?? 'SHARED',
+      note: 'Pass fileId to ofw_create_expense as receiptFileId. Expense visibility is controlled separately by privateExpense.',
     });
   });
 
