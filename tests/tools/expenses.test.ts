@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/server';
 import { OFWClient } from '../../src/client.js';
 import { registerExpenseTools } from '../../src/tools/expenses.js';
+import type { AttachmentIO } from '../../src/tools/attachments.js';
 
 type ToolHandler = (args: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }> }>;
 
@@ -14,14 +15,31 @@ function makeClient(returnValue: unknown) {
   return c;
 }
 
-function setup(client: OFWClient) {
+function makeAttachmentIO(
+  fileName = 'receipt.pdf',
+  mimeType = 'application/pdf',
+): AttachmentIO {
+  return {
+    supportsDisk: true,
+    resolveUpload: vi.fn().mockResolvedValue({
+      blob: new Blob(['%PDF-1.4\n'], { type: mimeType }),
+      fileName,
+      mimeType,
+      sizeBytes: 9,
+    }),
+    readDownloaded: () => null,
+    writeDownload: () => undefined,
+  };
+}
+
+function setup(client: OFWClient, attachmentIO?: AttachmentIO) {
   const server = new McpServer({ name: 'test', version: '0.0.0' });
   handlers = new Map();
   vi.spyOn(server, 'registerTool').mockImplementation((name: string, _config: unknown, cb: unknown) => {
     handlers.set(name, cb as ToolHandler);
     return undefined as never;
   });
-  registerExpenseTools(server, client);
+  registerExpenseTools(server, client, attachmentIO);
 }
 
 afterEach(() => vi.restoreAllMocks());
@@ -51,9 +69,6 @@ describe('ofw_list_expenses', () => {
   });
 
   it('reports zero returned when the response carries no record array at all', async () => {
-    // Defensive: these endpoints are unvalidated passthroughs, so an upstream
-    // shape with no array must still produce honest paging state rather than
-    // a crash or a confident "there is more".
     const client = makeClient({ message: 'no records' });
     setup(client);
     const parsed = JSON.parse((await handlers.get('ofw_list_expenses')!({})).content[0].text);
@@ -74,21 +89,114 @@ describe('ofw_list_expenses', () => {
   });
 });
 
+describe('ofw_upload_expense_pdf', () => {
+  let original: string | undefined;
+  beforeEach(() => {
+    original = process.env.OFW_WRITE_MODE;
+    process.env.OFW_WRITE_MODE = 'all';
+  });
+  afterEach(() => {
+    if (original === undefined) delete process.env.OFW_WRITE_MODE;
+    else process.env.OFW_WRITE_MODE = original;
+  });
+
+  it('uploads a PDF as a PRIVATE expense-source My Files object', async () => {
+    const client = makeClient({
+      fileId: 123,
+      fileName: 'receipt.pdf',
+      fileType: 'application/pdf',
+      sizeInBytes: 9,
+      shareClass: 'PRIVATE',
+    });
+    const io = makeAttachmentIO();
+    setup(client, io);
+
+    const result = await handlers.get('ofw_upload_expense_pdf')!({ path: '/tmp/receipt.pdf' });
+    expect(io.resolveUpload).toHaveBeenCalledWith('/tmp/receipt.pdf');
+
+    const call = vi.mocked(client.request).mock.calls[0];
+    expect(call[0]).toBe('POST');
+    expect(call[1]).toBe('/pub/v3/myfiles/multipart');
+    const form = call[2] as FormData;
+    expect(form.get('source')).toBe('expense');
+    expect(form.get('shareClass')).toBe('PRIVATE');
+    expect(form.get('fileName')).toBe('receipt.pdf');
+
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.fileId).toBe(123);
+    expect(parsed.shareClass).toBe('PRIVATE');
+  });
+
+  it('rejects non-PDF uploads before calling OFW', async () => {
+    const client = makeClient({});
+    setup(client, makeAttachmentIO('receipt.jpg', 'image/jpeg'));
+
+    await expect(
+      handlers.get('ofw_upload_expense_pdf')!({ path: '/tmp/receipt.jpg' }),
+    ).rejects.toThrow(/must be PDF/i);
+    expect(client.request).not.toHaveBeenCalled();
+  });
+});
+
 describe('ofw_create_expense', () => {
-  it('posts to /pub/v2/expense/expenses', async () => {
+  let original: string | undefined;
+  beforeEach(() => {
+    original = process.env.OFW_WRITE_MODE;
+    process.env.OFW_WRITE_MODE = 'all';
+  });
+  afterEach(() => {
+    if (original === undefined) delete process.env.OFW_WRITE_MODE;
+    else process.env.OFW_WRITE_MODE = original;
+  });
+
+  it('posts the legacy amount/description shape when optional fields are omitted', async () => {
     const client = makeClient({ id: 99 });
-    setup(client);
+    setup(client, makeAttachmentIO());
     const result = await handlers.get('ofw_create_expense')!({ amount: 50, description: 'School supplies' });
     expect(client.request).toHaveBeenCalledWith(
       'POST',
       '/pub/v2/expense/expenses',
-      expect.objectContaining({ amount: 50 })
+      { amount: 50, description: 'School supplies' },
     );
     expect(result.content).toHaveLength(1);
-    expect(result.content[0].type).toBe('text');
+  });
+
+  it('maps privateExpense to publicFlag=false and attaches one receipt file', async () => {
+    const client = makeClient({ id: 100 });
+    setup(client, makeAttachmentIO());
+    await handlers.get('ofw_create_expense')!({
+      amount: 42.25,
+      description: 'Medical copay',
+      privateExpense: true,
+      receiptFileId: 777,
+    });
+    expect(client.request).toHaveBeenCalledWith(
+      'POST',
+      '/pub/v2/expense/expenses',
+      {
+        amount: 42.25,
+        description: 'Medical copay',
+        publicFlag: false,
+        receiptFileId: 777,
+      },
+    );
+  });
+
+  it('maps an explicitly shared expense to publicFlag=true', async () => {
+    const client = makeClient({ id: 101 });
+    setup(client, makeAttachmentIO());
+    await handlers.get('ofw_create_expense')!({
+      amount: 10,
+      description: 'Shared',
+      privateExpense: false,
+    });
+    expect(client.request).toHaveBeenCalledWith(
+      'POST',
+      '/pub/v2/expense/expenses',
+      { amount: 10, description: 'Shared', publicFlag: true },
+    );
   });
 });
-
 
 describe('expense input schemas', () => {
   it('rejects negative start and non-positive/fractional max', () => {
@@ -98,7 +206,7 @@ describe('expense input schemas', () => {
       configs.set(name, config as { inputSchema?: z.ZodObject });
       return undefined as never;
     });
-    registerExpenseTools(server, new OFWClient());
+    registerExpenseTools(server, new OFWClient(), makeAttachmentIO());
 
     const schema = configs.get('ofw_list_expenses')!.inputSchema!;
     expect(schema.safeParse({ start: -1 }).success).toBe(false);
@@ -118,19 +226,30 @@ describe('OFW_WRITE_MODE gating', () => {
     else process.env.OFW_WRITE_MODE = original;
   });
 
-  it('ofw_create_expense is absent below mode "all"', () => {
+  it('expense creation is absent below mode "all"', () => {
     for (const mode of ['none', 'drafts']) {
       process.env.OFW_WRITE_MODE = mode;
-      setup(makeClient({}));
+      setup(makeClient({}), makeAttachmentIO());
       expect(handlers.has('ofw_create_expense')).toBe(false);
-      expect(handlers.has('ofw_list_expenses')).toBe(true); // reads unaffected
+      expect(handlers.has('ofw_list_expenses')).toBe(true);
       expect(handlers.has('ofw_get_expense_totals')).toBe(true);
     }
   });
 
-  it('ofw_create_expense registers in mode "all"', () => {
+  it('private PDF upload is available in drafts mode but absent in none', () => {
+    process.env.OFW_WRITE_MODE = 'none';
+    setup(makeClient({}), makeAttachmentIO());
+    expect(handlers.has('ofw_upload_expense_pdf')).toBe(false);
+
+    process.env.OFW_WRITE_MODE = 'drafts';
+    setup(makeClient({}), makeAttachmentIO());
+    expect(handlers.has('ofw_upload_expense_pdf')).toBe(true);
+  });
+
+  it('registers both expense write tools in mode "all"', () => {
     process.env.OFW_WRITE_MODE = 'all';
-    setup(makeClient({}));
+    setup(makeClient({}), makeAttachmentIO());
     expect(handlers.has('ofw_create_expense')).toBe(true);
+    expect(handlers.has('ofw_upload_expense_pdf')).toBe(true);
   });
 });
