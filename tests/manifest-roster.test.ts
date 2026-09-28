@@ -46,7 +46,7 @@ function registeredToolNames(): string[] {
   registerUserTools(server, client);
   registerMessageTools(server, client, cacheProvider, new NodeAttachmentIO());
   registerCalendarTools(server, client);
-  registerExpenseTools(server, client);
+  registerExpenseTools(server, client, new NodeAttachmentIO());
   registerJournalTools(server, client);
   return names;
 }
