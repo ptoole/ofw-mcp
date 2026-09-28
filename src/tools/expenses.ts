@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { OFWClient } from '../client.js';
 import type { AttachmentIO } from './attachments.js';
 import { jsonResponse } from './_shared.js';
-import { offsetState, readUpstreamPaging, withPaginationFirst } from './pagination.js';
+import { readUpstreamPaging } from './pagination.js';
 import { getExpenseUploadOnly, getWriteMode } from '../config.js';
 import { parseLenient } from '@chrischall/mcp-utils';
 
@@ -94,24 +94,54 @@ export function registerExpenseTools(
   });
 
   if (!uploadOnly) server.registerTool('ofw_list_expenses', {
-    description: 'List OurFamilyWizard expenses. Offset-paged via start/max. The response leads with its paging state — `hasMore` and `nextStart` (null when the list is exhausted) — BEFORE the records, so a truncated or partially-read response still says whether more remain. Never state an expense total or an absence from one page.',
+    description: 'List OurFamilyWizard expenses. OFW pages this endpoint with 1-based page/size parameters; its older start/max parameters are ignored and repeatedly return page 1. The response leads with hasMore and nextPage (null when exhausted) before the records. Continue by passing nextPage.',
     annotations: { readOnlyHint: true },
     inputSchema: z.object({
-      start: z.number().int().min(0).describe('Start offset, 0-based (default 0). To continue a listing, pass the `nextStart` from the previous response.').optional(),
-      max: z.number().int().min(1).describe('Max results (default 20)').optional(),
+      page: z.number().int().min(1).describe('1-based page number (default 1). To continue, pass the nextPage returned by the previous response.').optional(),
+      size: z.number().int().min(1).max(100).describe('Requested page size (default 20). OFW may cap or normalize this value.').optional(),
     }),
   }, async (args) => {
-    const start = args.start ?? 0;
-    const max = args.max ?? 20;
-    const data = await client.request('GET', `/pub/v2/expense/expenses?start=${start}&max=${max}`);
+    const page = args.page ?? 1;
+    const size = args.size ?? 20;
+    const data = await client.request('GET', `/pub/v2/expense/expenses?page=${page}&size=${size}`);
     const { returned, total, last } = readUpstreamPaging(data);
-    const wrapped = withPaginationFirst({
-      state: offsetState({ start, max, returned, total, last, base: 0 }),
-      start, max, returned, total,
-      hint: `Re-call ofw_list_expenses with start:${start + max}.`,
-      payload: data,
-    });
-    return jsonResponse(wrapped ?? data);
+
+    const body = typeof data === 'object' && data !== null && !Array.isArray(data)
+      ? data as Record<string, unknown>
+      : null;
+    if (body === null) return jsonResponse(data);
+
+    const metadata = typeof body.metadata === 'object' && body.metadata !== null && !Array.isArray(body.metadata)
+      ? body.metadata as Record<string, unknown>
+      : null;
+    const upstreamPage = metadata !== null && typeof metadata.currentPage === 'number'
+      ? metadata.currentPage
+      : metadata !== null && typeof metadata.page === 'number'
+        ? metadata.page
+        : page;
+    const upstreamSize = metadata !== null && typeof metadata.perPage === 'number'
+      ? metadata.perPage
+      : size;
+    const hasMore = last !== null
+      ? !last
+      : total !== null
+        ? upstreamPage * upstreamSize < total
+        : returned >= upstreamSize;
+    const nextPage = hasMore ? upstreamPage + 1 : null;
+    const scope = total !== null ? ` of ${total}` : '';
+    const head = {
+      hasMore,
+      nextPage,
+      page: upstreamPage,
+      size: upstreamSize,
+      returned,
+      ...(total !== null ? { total } : {}),
+      paginationNote: hasMore
+        ? `PARTIAL: this response holds ${returned} record(s) on page ${upstreamPage}${scope}. Re-call ofw_list_expenses with page:${nextPage}. Do not state a total or an absence from this response alone.`
+        : `This response reaches the end of the expense list${scope === '' ? '' : ` (${total} record(s) in total)`}.`,
+    };
+
+    return jsonResponse({ ...head, ...body, ...head });
   });
 
   if (allowPrivateUploads) server.registerTool('ofw_upload_expense_pdf', {
