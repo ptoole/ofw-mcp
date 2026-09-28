@@ -180,8 +180,12 @@
       "description": "List expenses"
     },
     {
+      "name": "ofw_upload_expense_pdf",
+      "description": "Upload a PDF privately to OFW My Files for attachment to an expense"
+    },
+    {
       "name": "ofw_create_expense",
-      "description": "Log a new expense"
+      "description": "Log a new expense, optionally private and with one receipt PDF"
     },
     {
       "name": "ofw_list_journal_entries",
