@@ -202,7 +202,7 @@ export function registerExpenseTools(
   });
 
   if (allowWrites) server.registerTool('ofw_create_expense', {
-    description: 'Log a new expense in OurFamilyWizard using the current expense-form contract. Required fields are title, amount, purchaseDate, categoryId, payerId (the parent who owes), and at least one child user id. Supports one previously-uploaded receipt PDF and private entries. privateExpense=true creates an expense visible only to you; false/default creates the normal shared expense. receiptFileId should come from ofw_upload_expense_pdf.',
+    description: 'Log a new expense in OurFamilyWizard using the current web-app expense contract. Required fields are title, amount, purchaseDate, categoryId, payerId (the parent who owes), and at least one child user id. Supports one previously-uploaded receipt PDF and private entries. privateExpense=true creates an expense visible only to you; false/default creates the normal shared expense. receiptFileId should come from ofw_upload_expense_pdf.'
     annotations: { readOnlyHint: false, destructiveHint: true },
     inputSchema: z.object({
       title: z.string().trim().min(1).describe('Expense title/name shown in the OFW expense log'),
@@ -227,13 +227,12 @@ export function registerExpenseTools(
 
     if (args.description !== undefined) payload.description = args.description;
 
-    // OFW's expense create endpoint uses publicFlag on writes. Keep the
-    // MCP-facing name explicit and human-readable.
-    if (args.privateExpense !== undefined) payload.publicFlag = !args.privateExpense;
+    // OFW's web app sends isPrivate directly.
+    if (args.privateExpense !== undefined) payload.isPrivate = args.privateExpense;
 
-    // Expense supports one receipt. Keep the tool singular so callers cannot
-    // accidentally publish multiple evidence files against one expense.
-    if (args.receiptFileId !== undefined) payload.receiptFileId = args.receiptFileId;
+    // OFW's web app sends attachments as a fileIds array. Keep the MCP-facing
+    // argument singular so callers still attach at most one canonical receipt.
+    if (args.receiptFileId !== undefined) payload.fileIds = [args.receiptFileId];
 
     const data = await client.request('POST', '/pub/v2/expense/expenses', payload);
     return jsonResponse(data);
