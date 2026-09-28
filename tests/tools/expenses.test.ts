@@ -57,6 +57,41 @@ describe('ofw_get_expense_totals', () => {
   });
 });
 
+describe('ofw_list_expense_categories', () => {
+  it('calls the expense categories endpoint and returns the payload unchanged', async () => {
+    const categories = {
+      data: [
+        {
+          id: 9001,
+          title: 'MSA Split',
+          description: 'Split Based on MSA.',
+          split: { parentSplit: '56', coparentSplit: '44' },
+        },
+      ],
+    };
+    const client = makeClient(categories);
+    setup(client);
+
+    const result = await handlers.get('ofw_list_expense_categories')!({});
+
+    expect(client.request).toHaveBeenCalledWith('GET', '/pub/v2/expense/categories');
+    expect(JSON.parse(result.content[0].text)).toEqual(categories);
+  });
+
+  it('registers as a read-only tool', () => {
+    const server = new McpServer({ name: 'test', version: '0.0.0' });
+    const configs = new Map<string, { annotations?: { readOnlyHint?: boolean } }>();
+    vi.spyOn(server, 'registerTool').mockImplementation((name: string, config: unknown) => {
+      configs.set(name, config as { annotations?: { readOnlyHint?: boolean } });
+      return undefined as never;
+    });
+
+    registerExpenseTools(server, new OFWClient(), makeAttachmentIO());
+
+    expect(configs.get('ofw_list_expense_categories')?.annotations?.readOnlyHint).toBe(true);
+  });
+});
+
 describe('ofw_list_expenses', () => {
   it('calls expenses with default page-based pagination', async () => {
     const client = makeClient({ data: [], metadata: { currentPage: 1, perPage: 20, last: true } });
@@ -74,7 +109,7 @@ describe('ofw_list_expenses', () => {
     const parsed = JSON.parse((await handlers.get('ofw_list_expenses')!({})).content[0].text);
     expect(parsed.returned).toBe(0);
     expect(parsed.hasMore).toBe(false);
-    expect(parsed.nextStart).toBeNull();
+    expect(parsed.nextPage).toBeNull();
     expect(parsed.message).toBe('no records');
   });
 
