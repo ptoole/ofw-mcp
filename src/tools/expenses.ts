@@ -164,22 +164,33 @@ export function registerExpenseTools(
   });
 
   if (allowWrites) server.registerTool('ofw_create_expense', {
-    description: 'Log a new expense in OurFamilyWizard. Supports attaching one previously-uploaded receipt PDF and marking the expense private. privateExpense=true creates an expense visible only to you; false/default creates the normal shared expense. receiptFileId should come from ofw_upload_expense_pdf.',
+    description: 'Log a new expense in OurFamilyWizard using the current expense-form contract. Required fields are title, amount, purchaseDate, categoryId, payerId (the parent who owes), and at least one child user id. Supports one previously-uploaded receipt PDF and private entries. privateExpense=true creates an expense visible only to you; false/default creates the normal shared expense. receiptFileId should come from ofw_upload_expense_pdf.',
     annotations: { readOnlyHint: false, destructiveHint: true },
     inputSchema: z.object({
-      amount: z.number().positive().describe('Expense amount'),
-      description: z.string().min(1).describe('Expense description'),
+      title: z.string().trim().min(1).describe('Expense title/name shown in the OFW expense log'),
+      amount: z.number().positive().describe('Full expense amount before OFW applies the category split'),
+      purchaseDate: z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/).describe('Date the expense was incurred, YYYY-MM-DD'),
+      categoryId: z.number().int().positive().describe('OFW expense category id (for example General is commonly id 1; use the id from OFW, not the category display name)'),
+      payerId: z.number().int().positive().describe('OFW userId of the parent who owes/reimburses this expense'),
+      children: z.array(z.number().int().positive()).min(1).describe('One or more OFW child userIds associated with the expense'),
+      description: z.string().trim().min(1).describe('Optional supporting description/details for the expense').optional(),
       privateExpense: z.boolean().describe('true = visible only to you; false/default = shared with co-parent').optional(),
       receiptFileId: z.number().int().positive().describe('Single OFW My Files fileId to attach as the receipt, normally returned by ofw_upload_expense_pdf').optional(),
     }),
   }, async (args) => {
     const payload: Record<string, unknown> = {
+      title: args.title,
       amount: args.amount,
-      description: args.description,
+      purchaseDate: args.purchaseDate,
+      categoryId: args.categoryId,
+      payerId: args.payerId,
+      children: args.children,
     };
 
-    // OFW uses publicFlag for visibility on its other record-creation APIs.
-    // Keep the MCP-facing name explicit and human-readable.
+    if (args.description !== undefined) payload.description = args.description;
+
+    // OFW's expense create endpoint uses publicFlag on writes. Keep the
+    // MCP-facing name explicit and human-readable.
     if (args.privateExpense !== undefined) payload.publicFlag = !args.privateExpense;
 
     // Expense supports one receipt. Keep the tool singular so callers cannot
